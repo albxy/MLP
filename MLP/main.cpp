@@ -7,6 +7,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <iomanip>   // 用于 setprecision
+#include <string>
 //#define USE_PRETRAINED  // 定义此宏以使用预训练模型（需在 createPreTrained 中填入权重）
 // 激活函数类型
 enum class Activation { ReLU, Linear };
@@ -48,6 +49,7 @@ void normalize(std::vector<double>& data) {
         val = 2.0 * (val - minVal) / range - 1.0;
     }
 }
+
 // 神经网络类
 class NeuralNetwork {
 public:
@@ -101,7 +103,7 @@ public:
         if (biases.size() != layer_sizes.size() - 1)
             throw std::invalid_argument("Number of bias vectors mismatch");
 
-        /*for (size_t i = 0; i < weights.size(); ++i) {
+        for (size_t i = 0; i < weights.size(); ++i) {
             if (weights[i].size() != layer_sizes[i + 1])
                 throw std::invalid_argument("Weight matrix row count mismatch for layer " + std::to_string(i));
             for (const auto& row : weights[i]) {
@@ -110,7 +112,7 @@ public:
             }
             if (biases[i].size() != layer_sizes[i + 1])
                 throw std::invalid_argument("Bias vector size mismatch for layer " + std::to_string(i));
-        }*/
+        }
     }
 
     // 静态工厂方法：返回一个预训练的网络（用户需要在此填入训练好的权重）
@@ -201,7 +203,7 @@ public:
         }
 
         // 反向传播，从最后一层到第一层
-        for (int l = L - 1; l >= 0; --l) {
+        for (size_t l = L - 1; l >= 0; --l) {
             const auto& W = weights_[l];
             const auto& input = layer_inputs_[l + 1];  // 第l层的输入（即前一层的输出）
             Activation act = activations_[l + 1];      // 第l层的激活函数
@@ -247,7 +249,7 @@ public:
 
             //在这里自己思考怎么搓随机输入，别忘了input_dim是数据的最大范围。所以我觉得可以将多出来的直接编码成0
             //而且别忘了屌丝题目对数据有特殊要求（树、图），所以不能直接乱随机。学学怎么生成符合要求的数据吧。
-            
+            input = data_generator();
 
             // 调用 oracle 获得目标输出
             std::vector<double> target = oracle(input);
@@ -335,7 +337,11 @@ std::vector<double> my_algorithm(const std::vector<double>& input) {
     double x2 = input[1];
     return { x1 + x2, x1 * x2 };
 }
-
+// 示例：数据生成器（根据题目要求生成符合条件的输入数据）
+std::vector<double> data_generator()
+{
+    
+}
 int main() {
     // 定义网络结构
     std::vector<size_t> layers = { 2, 10, 2 };
