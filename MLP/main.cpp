@@ -11,7 +11,8 @@
 #include <fstream>
 #define input_u 1e2
 #define output_u 1e2
-
+#define input_dimension 1e3
+#define output_dimension 1
 //#define USE_PRETRAINED  // 定义此宏以使用预训练模型（需在 createPreTrained 中填入权重）
 
 enum class Activation { ReLU, LeakyReLU, Linear };
@@ -40,7 +41,7 @@ std::vector<double> data_generator()
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> dist(0.0, 10);
-    std::uniform_real_distribution<double> dist2(0.0, 3.0);
+    std::uniform_real_distribution<double> dist2(0.0, input_dimension);
 	int n = std::round(dist2(gen));
     std::vector<double> input(n);
     for (int i=0;i<n;i++)
@@ -48,6 +49,31 @@ std::vector<double> data_generator()
         input[i] = std::round(dist(gen));
     }
     return input;
+}
+
+void normalize_input(std::vector<double>& input)
+{
+    // 归一化输入（根据题目数据范围进行缩放）
+    for (auto& val : input)
+    {
+        val /= input_u;
+    }
+}
+void normalize_target(std::vector<double>& target)
+{
+    // 归一化目标输出（根据题目数据范围进行缩放）
+    for (auto& val : target)
+    {
+        val /= output_u;
+    }
+}
+void denormalize_output(std::vector<double>& output)
+{
+    // 反归一化输出（将网络输出还原到原始范围）
+    for (auto& val : output)
+    {
+        val *= output_u;
+    }
 }
 // 神经网络类
 class NeuralNetwork {
@@ -247,35 +273,9 @@ public:
             // 调用 oracle 获得目标输出
             std::vector<double> target = oracle(input);
 
-            for (auto& val : input)
-            {
-                val /= input_u;
-            }
-            for (auto& val : target)
-            {
-                val /= output_u;
-            }
-
-/*
-            std::cout << "Input:\n";
-			for (auto& val : input)
-            {
-                if(val!=0.0)
-                    std::cout << val << " ";
-                val /= input_u;
-            }
-			std::cout << std::endl;
-
-			std::cout << "Target:\n";
-            for (auto& val : target)
-            {
-                std::cout << val << " ";
-				val /= input_u;
-			}
-            std::cout << std::endl;
-*/
-            //normalize(input); // 归一化输入
-
+            //归一化
+            normalize_input(input);
+            normalize_target(target);
 
 			input.resize(input_dim, 0.0); // 如果输入不足，补零
 
@@ -380,7 +380,7 @@ std::vector<double> my_algorithm(const std::vector<double>& input) {
 
 int main() {
     // 定义网络结构
-    std::vector<size_t> layers = { 3, 2, 1 };
+    std::vector<size_t> layers = { size_t(input_dimension), 2, output_dimension };
     std::vector<Activation> activations = { Activation::Linear, Activation::LeakyReLU, Activation::Linear };
 
 #ifdef USE_PRETRAINED
@@ -390,7 +390,7 @@ int main() {
 #else
     // 创建并训练新网络
     NeuralNetwork nn(layers, activations);
-    nn.train(my_algorithm, 3, 1, 1e5, 0.1, 1e5);
+    nn.train(my_algorithm, input_dimension, output_dimension, 1e6, 0.01, 1e5);
 
     // 打印训练后的权重，以便复制到 createPreTrained 中
     std::cout << "\n--- Copy the following arrays into NeuralNetwork::createPreTrained() ---\n";
@@ -400,20 +400,19 @@ int main() {
 
     while (1)
     {
-        std::vector<double> inputs(3);
+        std::vector<double> inputs(input_dimension);
         double n;
         std::cin >> n;
-        if (n > 3) return 0;
+        if (n > input_dimension) return 0;
         for (int i = 0; i < n; i++)
         {
-            double val;
-            std::cin >> val;
-            val /= input_u;
-            inputs[i] = val;
+            std::cin >> inputs[i];
         }
+		normalize_input(inputs); // 归一化输入
         std::vector<double> output = nn.predict(inputs);
-        output[0] *= output_u; // 将输出反归一化
+		denormalize_output(output); // 反归一化输出
         std::cout << output[0];
+
         for (int i = 0; i < n; i++)
         {
             inputs[i] *= input_u;
