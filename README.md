@@ -1,4 +1,7 @@
 # MLP
 ### This is a crudely made MLP generated using AI. Its purpose is to explore the potential of MLP in OI (Olympiad in Informatics). This little thing treats all inputs as one-dimensional arrays (currently only supporting double), and requires you to provide a reasonable random data generator (covering the range required by the problem!!!) and the correct algorithm (with no strict time complexity requirements). This allows you to use the computer in the exam room to train your model, and then simply copy the output weights into your source code. You can then submit the trained model directly to the cute judging system, effortlessly solving those annoying problems that would otherwise take three hours of optimization only to end up with a score of zero.
-
+#### I tried [https://www.luogu.com.cn/problem/P1090](url) (1e5 2 5 1) and failed. Of course, it might be because the first hidden layer is too meager, but adding more weights would cause the file size to explode (source code exceeding 100KB is not allowed in OI). Looking forward to new architectures.
+#### This is now a playable n number adder.
 ### 这是一个粗制滥造的用AI生成的MLP。目的是探索MLP在OI(信息学竞赛)方面的潜力。这个小东西将一切输入认为是一维数组（暂时只有double），并要求你提供合理的（覆盖到题目要求的范围啊！！！）随机数据生成器，正确的算法（对于时间复杂度没有要求）。于是你可以利用考场的电脑来训练你的模型，然后只需复制输出的权重到源代码里，就可以将训练好的模型直接提交给可爱的评测机直接解决优化3小时还爆0的恶心问题。
+#### 结果现在试了一下 [https://www.luogu.com.cn/problem/P1090](url) 发现拟合失败了(1e5 2 5 1)当然可能是因为这个第一隐藏层实在是太穷酸了，可是再加多权重文件大小就要爆了(OI中超过100KB的源代码是违规的)。期待新的架构
+#### 现在的这个是一个n个数加法器，可以玩玩
