@@ -41,12 +41,12 @@ std::vector<double> data_generator()
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> dist(0.0, 10);
-    std::uniform_real_distribution<double> dist2(0.0, input_dimension);
-	int n = std::round(dist2(gen));
+    std::uniform_int_distribution<int> dist2(0, input_dimension);
+    int n = dist2(gen);
     std::vector<double> input(n);
     for (int i=0;i<n;i++)
     {
-        input[i] = std::round(dist(gen));
+        input[i] = dist(gen);
     }
     return input;
 }
