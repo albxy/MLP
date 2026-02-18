@@ -8,48 +8,47 @@
 #include <stdexcept>
 #include <iomanip>   // 用于 setprecision
 #include <string>
-//#define USE_PRETRAINED  // 定义此宏以使用预训练模型（需在 createPreTrained 中填入权重）
-// 激活函数类型
-enum class Activation { ReLU, Linear };
+#include <fstream>
+#define input_u 1e2
+#define output_u 1e2
 
-// 激活函数及其导数
+//#define USE_PRETRAINED  // 定义此宏以使用预训练模型（需在 createPreTrained 中填入权重）
+
+enum class Activation { ReLU, LeakyReLU, Linear };
+
 double activate(double x, Activation type) {
     switch (type) {
-    case Activation::ReLU:   return x > 0 ? x : 0.0;
-    case Activation::Linear: return x;
+    case Activation::ReLU:       return x > 0 ? x : 0.0;
+    case Activation::LeakyReLU:  return x > 0 ? x : 0.01 * x;
+    case Activation::Linear:     return x;
     default: return x;
     }
 }
 
 double activate_derivative(double x, Activation type) {
     switch (type) {
-    case Activation::ReLU:   return x > 0 ? 1.0 : 0.0;
-    case Activation::Linear: return 1.0;
+    case Activation::ReLU:       return x > 0 ? 1.0 : 0.0;
+    case Activation::LeakyReLU:  return x > 0 ? 1.0 : 0.01;
+    case Activation::Linear:     return 1.0;
     default: return 1.0;
     }
 }
 
-// 数据归一化函数：将数据线性映射到 [-1, 1] 区间
-void normalize(std::vector<double>& data) {
-    if (data.empty()) return;  // 空向量不做任何操作
-
-    // 同时找出最小值和最大值
-    auto [minIt, maxIt] = std::minmax_element(data.begin(), data.end());
-    double minVal = *minIt;
-    double maxVal = *maxIt;
-
-    // 如果所有元素相等，将整个向量置为 0（或其他约定值）
-    if (minVal == maxVal) {
-        std::fill(data.begin(), data.end(), 0.0);
-        return;
+// 数据生成器（根据题目要求生成符合条件的输入数据）
+std::vector<double> data_generator()
+{
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> dist(0.0, 10);
+    std::uniform_real_distribution<double> dist2(0.0, 3.0);
+	int n = std::round(dist2(gen));
+    std::vector<double> input(n);
+    for (int i=0;i<n;i++)
+    {
+        input[i] = std::round(dist(gen));
     }
-
-    double range = maxVal - minVal;
-    for (double& val : data) {
-        val = 2.0 * (val - minVal) / range - 1.0;
-    }
+    return input;
 }
-
 // 神经网络类
 class NeuralNetwork {
 public:
@@ -62,26 +61,22 @@ public:
         if (layer_sizes.size() != activations.size())
             throw std::invalid_argument("Each layer must have an activation function");
 
-        // 初始化权重和偏置（随机均匀分布[-0.5,0.5]）
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::uniform_real_distribution<double> dist(-0.5, 0.5);
-
         for (size_t i = 1; i < layer_sizes.size(); ++i) {
-            size_t rows = layer_sizes[i];          // 当前层神经元数
-            size_t cols = layer_sizes[i - 1];        // 前一层神经元数
+            size_t rows = layer_sizes[i];
+            size_t cols = layer_sizes[i - 1];
+            double stddev = std::sqrt(2.0 / cols);  // He初始化标准差
 
-            // 权重矩阵 rows x cols
+            std::normal_distribution<double> dist(0.0, stddev);
             std::vector<std::vector<double>> w(rows, std::vector<double>(cols));
             for (auto& row : w)
                 for (auto& val : row)
                     val = dist(gen);
             weights_.push_back(std::move(w));
 
-            // 偏置向量
-            std::vector<double> b(rows);
-            for (auto& val : b)
-                val = dist(gen);
+            // 偏置初始化为0（或很小的正数，如0.01）
+            std::vector<double> b(rows, 0.0);
             biases_.push_back(std::move(b));
         }
     }
@@ -116,10 +111,8 @@ public:
     }
 
     // 静态工厂方法：返回一个预训练的网络（用户需要在此填入训练好的权重）
-    static NeuralNetwork createPreTrained() {
-        // 网络结构（必须与训练时完全一致）
-        std::vector<size_t> layers = { 2, 10, 2 };
-        std::vector<Activation> activations = { Activation::ReLU, Activation::ReLU, Activation::Linear };
+    static NeuralNetwork createPreTrained(std::vector<size_t> layers, std::vector<Activation> activations)
+    {
 
         // TODO: 将下面两个数组替换为从 printWeights() 输出的内容
         // 预训练权重
@@ -192,46 +185,46 @@ public:
         if (target.size() != layer_sizes_.back())
             throw std::invalid_argument("Target size mismatch");
 
-        size_t L = weights_.size();  // 层数（不含输入）
+        size_t L = weights_.size();  // 隐藏层+输出层的数量
 
-        // 计算输出层误差
-        std::vector<double> delta = layer_outputs_.back();
-        for (size_t i = 0; i < delta.size(); ++i) {
+        // 存储每一层输出的误差 (delta)
+        std::vector<std::vector<double>> deltas(L);
+
+        // ----- 1. 计算输出层误差 -----
+        deltas[L - 1].resize(layer_outputs_.back().size());
+        for (size_t i = 0; i < layer_outputs_.back().size(); ++i) {
             double output = layer_outputs_.back()[i];
             double derivative = activate_derivative(output, activations_.back());
-            delta[i] = (output - target[i]) * derivative;  // 均方误差的导数
+            deltas[L - 1][i] = (output - target[i]) * derivative;
         }
 
-        // 反向传播，从最后一层到第一层
-        for (size_t l = L - 1; l >= 0; --l) {
-            const auto& W = weights_[l];
-            const auto& input = layer_inputs_[l + 1];  // 第l层的输入（即前一层的输出）
-            Activation act = activations_[l + 1];      // 第l层的激活函数
+        // ----- 2. 反向传播，计算前面各层的误差 -----
+        for (int l = L - 2; l >= 0; --l) {
+            const auto& W_next = weights_[l + 1];           // 下一层的权重
+            const auto& next_delta = deltas[l + 1];
+            const auto& output_this = layer_outputs_[l];  // 当前层的输出
+            deltas[l].resize(output_this.size(), 0.0);
+            for (size_t k = 0; k < output_this.size(); ++k) {
+                double error = 0.0;
+                for (size_t j = 0; j < W_next.size(); ++j) {
+                    error += next_delta[j] * W_next[j][k];
+                }
+                double derivative = activate_derivative(output_this[k], activations_[l + 1]);
+                deltas[l][k] = error * derivative;
+            }
+        }
 
-            // 更新权重和偏置
+        // ----- 3. 更新所有层的权重和偏置 -----
+        for (size_t l = 0; l < L; ++l) {
+            const auto& input = layer_inputs_[l + 1];   // 当前层的输入
+            const auto& delta = deltas[l];
+            auto& W = weights_[l];
+            auto& b = biases_[l];
             for (size_t j = 0; j < W.size(); ++j) {
                 for (size_t k = 0; k < input.size(); ++k) {
-                    // dw = delta_j * input_k
-                    weights_[l][j][k] -= lr * delta[j] * input[k];
+                    W[j][k] -= lr * delta[j] * input[k];
                 }
-                // db = delta_j
-                biases_[l][j] -= lr * delta[j];
-            }
-
-            // 如果还有前一层，计算前一层的误差
-            if (l > 0) {
-                std::vector<double> prev_delta(input.size(), 0.0);
-                for (size_t k = 0; k < input.size(); ++k) {
-                    double error = 0.0;
-                    for (size_t j = 0; j < W.size(); ++j) {
-                        error += delta[j] * W[j][k];
-                    }
-                    // 乘以前一层的激活导数
-                    double prev_act = input[k];
-                    double derivative = activate_derivative(prev_act, activations_[l]); // 注意：前一层的激活是 activations_[l]
-                    prev_delta[k] = error * derivative;
-                }
-                delta = std::move(prev_delta);
+                b[j] -= lr * delta[j];
             }
         }
     }
@@ -245,7 +238,7 @@ public:
 
         for (size_t iter = 0; iter < iterations; ++iter) {
             // 随机生成输入
-            std::vector<double> input(input_dim);
+            std::vector<double> input;
 
             //在这里自己思考怎么搓随机输入，别忘了input_dim是数据的最大范围。所以我觉得可以将多出来的直接编码成0
             //而且别忘了屌丝题目对数据有特殊要求（树、图），所以不能直接乱随机。学学怎么生成符合要求的数据吧。
@@ -254,7 +247,37 @@ public:
             // 调用 oracle 获得目标输出
             std::vector<double> target = oracle(input);
 
-            normalize(input); // 归一化输入
+            for (auto& val : input)
+            {
+                val /= input_u;
+            }
+            for (auto& val : target)
+            {
+                val /= output_u;
+            }
+
+/*
+            std::cout << "Input:\n";
+			for (auto& val : input)
+            {
+                if(val!=0.0)
+                    std::cout << val << " ";
+                val /= input_u;
+            }
+			std::cout << std::endl;
+
+			std::cout << "Target:\n";
+            for (auto& val : target)
+            {
+                std::cout << val << " ";
+				val /= input_u;
+			}
+            std::cout << std::endl;
+*/
+            //normalize(input); // 归一化输入
+
+
+			input.resize(input_dim, 0.0); // 如果输入不足，补零
 
             // 前向传播
             std::vector<double> output = forward(input);
@@ -270,7 +293,7 @@ public:
                     loss += diff * diff;
                 }
                 loss /= output.size();
-                std::cout << "Iteration " << iter << ", MSE: " << loss << std::endl;
+                std::cout << "\nIteration " << iter << ", MSE: " << loss <<"\n\n";
             }
         }
     }
@@ -282,41 +305,51 @@ public:
 
     // 打印当前权重和偏置，格式可直接复制到 createPreTrained() 中
     void printWeights() const {
-        std::cout << std::setprecision(15); // 高精度输出
+        // 打开文件
+        std::ofstream outFile("weights.txt");
+        if (!outFile.is_open()) {
+            std::cerr << "Error: Cannot open file weights.txt for writing.\n";
+            return; // 或抛出异常
+        }
+
+        outFile << std::setprecision(15); // 高精度输出
 
         // 打印权重
-        std::cout << "std::vector<std::vector<std::vector<double>>> pre_weights = {\n";
+        outFile << "std::vector<std::vector<std::vector<double>>> pre_weights = {\n";
         for (size_t l = 0; l < weights_.size(); ++l) {
-            std::cout << "    { // layer " << l << " (" << weights_[l].size() << "x" << (l == 0 ? layer_sizes_[0] : layer_sizes_[l]) << ")\n";
+            outFile << "    { // layer " << l << " (" << weights_[l].size() << "x" << (l == 0 ? layer_sizes_[0] : layer_sizes_[l]) << ")\n";
             for (const auto& row : weights_[l]) {
-                std::cout << "        {";
+                outFile << "        {";
                 for (size_t i = 0; i < row.size(); ++i) {
-                    if (i > 0) std::cout << ", ";
-                    std::cout << row[i];
+                    if (i > 0) outFile << ", ";
+                    outFile << row[i];
                 }
-                std::cout << "}";
-                if (&row != &weights_[l].back()) std::cout << ",";
-                std::cout << "\n";
+                outFile << "}";
+                if (&row != &weights_[l].back()) outFile << ",";
+                outFile << "\n";
             }
-            std::cout << "    }";
-            if (l < weights_.size() - 1) std::cout << ",";
-            std::cout << "\n";
+            outFile << "    }";
+            if (l < weights_.size() - 1) outFile << ",";
+            outFile << "\n";
         }
-        std::cout << "};\n\n";
+        outFile << "};\n\n";
 
         // 打印偏置
-        std::cout << "std::vector<std::vector<double>> pre_biases = {\n";
+        outFile << "std::vector<std::vector<double>> pre_biases = {\n";
         for (size_t l = 0; l < biases_.size(); ++l) {
-            std::cout << "    { // layer " << l << " biases\n        ";
+            outFile << "    { // layer " << l << " biases\n        ";
             for (size_t i = 0; i < biases_[l].size(); ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << biases_[l][i];
+                if (i > 0) outFile << ", ";
+                outFile << biases_[l][i];
             }
-            std::cout << "\n    }";
-            if (l < biases_.size() - 1) std::cout << ",";
-            std::cout << "\n";
+            outFile << "\n    }";
+            if (l < biases_.size() - 1) outFile << ",";
+            outFile << "\n";
         }
-        std::cout << "};\n";
+        outFile << "};\n";
+
+        // 文件会在 outFile 析构时自动关闭，此处可省略 close()
+        // outFile.close();
     }
 
 private:
@@ -329,32 +362,35 @@ private:
     std::vector<std::vector<double>> layer_inputs_;   // 每层的输入（第一层为原始输入）
     std::vector<std::vector<double>> layer_outputs_;  // 每层的输出（最后一层为网络输出）
 };
-
-// 示例：用户自定义算法（此处为 y1 = x1 + x2, y2 = x1 * x2）
+#include <queue>
 std::vector<double> my_algorithm(const std::vector<double>& input) {
-    if (input.size() != 2) throw std::invalid_argument("Need 2 inputs");
-    double x1 = input[0];
-    double x2 = input[1];
-    return { x1 + x2, x1 * x2 };
+    // 处理空输入的情况，返回只包含 0 的向量
+    if (input.empty()) {
+        return { 0.0 };
+    }
+
+	double ans = 0.0;
+	for (auto val : input)
+    {
+        ans += val;
+    }
+    // 返回只包含最终总代价的向量
+    return { ans };
 }
-// 示例：数据生成器（根据题目要求生成符合条件的输入数据）
-std::vector<double> data_generator()
-{
-    
-}
+
 int main() {
     // 定义网络结构
-    std::vector<size_t> layers = { 2, 10, 2 };
-    std::vector<Activation> activations = { Activation::ReLU, Activation::ReLU, Activation::Linear };
+    std::vector<size_t> layers = { 3, 2, 1 };
+    std::vector<Activation> activations = { Activation::Linear, Activation::LeakyReLU, Activation::Linear };
 
 #ifdef USE_PRETRAINED
     // 使用预训练模型（需提前在 createPreTrained 中填入权重）
-    NeuralNetwork nn = NeuralNetwork::createPreTrained();
-    std::cout << "Loaded pre-trained network.\n";
+    NeuralNetwork nn = NeuralNetwork::createPreTrained(layers,activations);
+    //std::cout << "Loaded pre-trained network.\n";
 #else
     // 创建并训练新网络
     NeuralNetwork nn(layers, activations);
-    nn.train(my_algorithm, 2, 2, 1000000, 0.01, 1000);
+    nn.train(my_algorithm, 3, 1, 1e5, 0.1, 1e5);
 
     // 打印训练后的权重，以便复制到 createPreTrained 中
     std::cout << "\n--- Copy the following arrays into NeuralNetwork::createPreTrained() ---\n";
@@ -362,22 +398,27 @@ int main() {
     std::cout << "--- End of copy ---\n\n";
 #endif
 
-    // 测试几个点
-    std::vector<std::vector<double>> test_inputs = {
-        {0.5, 0.3},
-        {-0.2, 0.8},
-        {1.0, -0.5},
-        {0.0, 0.0}
-    };
-
-    std::cout << "\nTesting trained network:\n";
-    for (const auto& inp : test_inputs) {
-        auto true_out = my_algorithm(inp);
-        auto pred_out = nn.predict(inp);
-        std::cout << "Input: (" << inp[0] << ", " << inp[1] << ")\n";
-        std::cout << "  True:  (" << true_out[0] << ", " << true_out[1] << ")\n";
-        std::cout << "  Pred:  (" << pred_out[0] << ", " << pred_out[1] << ")\n";
+    while (1)
+    {
+        std::vector<double> inputs(3);
+        double n;
+        std::cin >> n;
+        if (n > 3) return 0;
+        for (int i = 0; i < n; i++)
+        {
+            double val;
+            std::cin >> val;
+            val /= input_u;
+            inputs[i] = val;
+        }
+        std::vector<double> output = nn.predict(inputs);
+        output[0] *= output_u; // 将输出反归一化
+        std::cout << output[0];
+        for (int i = 0; i < n; i++)
+        {
+            inputs[i] *= input_u;
+        }
+        std::cout << "True:" << my_algorithm(inputs)[0] << std::endl;
     }
-
     return 0;
 }
