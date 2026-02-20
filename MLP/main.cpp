@@ -44,11 +44,25 @@ std::vector<double> data_generator()
     std::uniform_int_distribution<int> dist2(0, input_dimension);
     int n = dist2(gen);
     std::vector<double> input(n);
-    for (int i=0;i<n;i++)
+    for (int i = 0; i < n; i++)
     {
         input[i] = dist(gen);
     }
     return input;
+}
+std::vector<double> my_algorithm(const std::vector<double>& input) {
+    // 处理空输入的情况，返回只包含 0 的向量
+    if (input.empty()) {
+        return { 0.0 };
+    }
+
+    double ans = 0.0;
+    for (auto val : input)
+    {
+        ans += val;
+    }
+    // 返回只包含最终总代价的向量
+    return { ans };
 }
 
 void normalize_input(std::vector<double>& input)
@@ -277,8 +291,8 @@ public:
             normalize_input(input);
             normalize_target(target);
 
-			input.resize(input_dim, 0.0); // 如果输入不足，补零
-
+            input.resize(input_dim, 0.0); // 如果输入不足，补零
+			target.resize(output_dim, 0.0); // 如果目标输出不足，补零
             // 前向传播
             std::vector<double> output = forward(input);
 
@@ -293,7 +307,7 @@ public:
                     loss += diff * diff;
                 }
                 loss /= output.size();
-                std::cout << "\nIteration " << iter << ", MSE: " << loss <<"\n\n";
+                std::cout << "\nIteration " << iter << ", MSE: " << loss << "\n\n";
             }
         }
     }
@@ -362,21 +376,6 @@ private:
     std::vector<std::vector<double>> layer_inputs_;   // 每层的输入（第一层为原始输入）
     std::vector<std::vector<double>> layer_outputs_;  // 每层的输出（最后一层为网络输出）
 };
-#include <queue>
-std::vector<double> my_algorithm(const std::vector<double>& input) {
-    // 处理空输入的情况，返回只包含 0 的向量
-    if (input.empty()) {
-        return { 0.0 };
-    }
-
-	double ans = 0.0;
-	for (auto val : input)
-    {
-        ans += val;
-    }
-    // 返回只包含最终总代价的向量
-    return { ans };
-}
 
 int main() {
     // 定义网络结构
@@ -385,7 +384,7 @@ int main() {
 
 #ifdef USE_PRETRAINED
     // 使用预训练模型（需提前在 createPreTrained 中填入权重）
-    NeuralNetwork nn = NeuralNetwork::createPreTrained(layers,activations);
+    NeuralNetwork nn = NeuralNetwork::createPreTrained(layers, activations);
     //std::cout << "Loaded pre-trained network.\n";
 #else
     // 创建并训练新网络
@@ -400,24 +399,31 @@ int main() {
 
     while (1)
     {
-        std::vector<double> inputs(input_dimension);
         double n;
         std::cin >> n;
         if (n > input_dimension) return 0;
+        std::vector<double> inputs(n);
         for (int i = 0; i < n; i++)
         {
             std::cin >> inputs[i];
         }
-		normalize_input(inputs); // 归一化输入
-        std::vector<double> output = nn.predict(inputs);
-		denormalize_output(output); // 反归一化输出
-        std::cout << output[0];
-
-        for (int i = 0; i < n; i++)
+        std::cout << "True:\n";
+		std::vector<double> true_output = my_algorithm(inputs);
+        for (int i = 0; i < output_dimension; i++)
         {
-            inputs[i] *= input_u;
+            std::cout << true_output[i] << " ";
         }
-        std::cout << "True:" << my_algorithm(inputs)[0] << std::endl;
+        std::cout << "\n";
+		inputs.resize(input_dimension, 0.0);
+        normalize_input(inputs); // 归一化输入
+        std::vector<double> output = nn.predict(inputs);
+        denormalize_output(output); // 反归一化输出
+		std::cout << "Predicted:\n";
+        for (int i = 0; i < output_dimension; i++)
+        {
+            std::cout << output[i] << " ";
+        }
+        std::cout << "\n";
     }
     return 0;
 }
